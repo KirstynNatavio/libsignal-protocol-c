@@ -10,6 +10,7 @@
 #include "session_cipher.h"
 #include "session_builder.h"
 #include "protocol.h"
+#include "key_helper.h"
 #include "test_common.h"
 
 static signal_protocol_address alice_address = {
@@ -105,6 +106,16 @@ START_TEST(test_basic_simultaneous_initiate)
     session_builder *bob_session_builder = 0;
     result = session_builder_create(&bob_session_builder, bob_store, &alice_address, global_context);
     ck_assert_int_eq(result, 0);
+
+    /* Create kA */
+    uint8_t *alice_kA = 0;
+    result = signal_protocol_key_helper_generate_binary_key(&alice_kA, global_context, 1);
+    ck_assert_int_eq(result, 0);   
+
+    /* Create kB */
+    uint8_t *bob_kB = 0;
+    result = signal_protocol_key_helper_generate_binary_key(&bob_kB, global_context, 1);
+    ck_assert_int_eq(result, 0);     
 
     /* Create the session ciphers */
     session_cipher *alice_session_cipher = 0;
@@ -1686,6 +1697,9 @@ int main(void)
 
     suite = simultaneous_initiate_suite();
     runner = srunner_create(suite);
+
+    //allows for breakpoint setting in test processes
+    srunner_set_fork_status(runner, CK_NOFORK);
 
     srunner_run_all(runner, CK_VERBOSE);
     number_failed = srunner_ntests_failed(runner);
