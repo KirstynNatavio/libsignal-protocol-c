@@ -13,6 +13,8 @@
 #include "key_helper.h"
 #include "test_common.h"
 
+#define DJB_KEY_LEN 32
+
 static signal_protocol_address alice_address = {
         "+14159998888", 12, 1
 };
@@ -132,6 +134,47 @@ START_TEST(test_basic_simultaneous_initiate)
 
     result = session_builder_process_pre_key_bundle(bob_session_builder, alice_pre_key_bundle);
     ck_assert_int_eq(result, 0);
+
+    /* Alice creates cA */
+    ciphertext_message *alice_cA = 0;
+    result = session_cipher_encrypt(alice_session_cipher, alice_kA, DJB_KEY_LEN, &alice_cA);
+    ck_assert_int_eq(result, 0);
+
+    /* Bob creates cB */
+    ciphertext_message *bob_cB = 0;
+    result = session_cipher_encrypt(bob_session_cipher, bob_kB, DJB_KEY_LEN, &bob_cB);
+    ck_assert_int_eq(result, 0);
+
+    /* Verify message types */ 
+    ck_assert_int_eq(ciphertext_message_get_type(alice_cA), CIPHERTEXT_PREKEY_TYPE);
+    ck_assert_int_eq(ciphertext_message_get_type(bob_cB), CIPHERTEXT_PREKEY_TYPE);
+
+    /* Alice makes cA a pre_key_signal_message */
+    pre_key_signal_message *alice_cA_copy = 0;
+    result = pre_key_signal_message_copy(&alice_cA_copy, (pre_key_signal_message *)alice_cA, global_context);
+    ck_assert_int_eq(result, 0);
+
+    /* Bob makes cB a pre_key_signal_message */
+    pre_key_signal_message *bob_cB_copy = 0;
+    result = pre_key_signal_message_copy(&bob_cB_copy, (pre_key_signal_message *)bob_cB, global_context);
+    ck_assert_int_eq(result, 0);
+
+    /* Alice decrypts cB to get kB */
+    signal_buffer *cB_decrypted = 0;
+    result = session_cipher_decrypt_pre_key_signal_message(alice_session_cipher, bob_cB_copy, 0, &cB_decrypted);
+    ck_assert_int_eq(result, 0);
+
+    /* Bob decrypts cA to get kA */  
+    signal_buffer *cA_decrypted = 0;
+    result = session_cipher_decrypt_pre_key_signal_message(bob_session_cipher, alice_cA_copy, 0, &cA_decrypted);
+    ck_assert_int_eq(result, 0);
+
+    /* Verify that the messages decrypted correctly */
+    uint8_t *cB_decrypted_data = signal_buffer_data(cB_decrypted);
+    ck_assert_int_eq(memcmp(bob_kB, cB_decrypted_data, DJB_KEY_LEN), 0);
+
+    uint8_t *cA_decrypted_data = signal_buffer_data(cA_decrypted);
+    ck_assert_int_eq(memcmp(alice_kA, cA_decrypted_data, DJB_KEY_LEN), 0);
 
     /* Encrypt a pair of messages */
     static const char message_for_bob_data[] = "hey there";
