@@ -1238,3 +1238,11 @@ complete:
 
     return result;
 }
+
+uint8_t* get_ratchet_root_key(const ratchet_root_key *ratchet_root_key) {
+    return ratchet_root_key->key;
+}
+
+uint8_t* get_ratchet_chain_key(const ratchet_chain_key *ratchet_chain_key) {
+    return ratchet_chain_key->key;
+}

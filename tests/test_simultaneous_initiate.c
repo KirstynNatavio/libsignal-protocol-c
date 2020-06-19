@@ -176,6 +176,19 @@ START_TEST(test_basic_simultaneous_initiate)
     uint8_t *cA_decrypted_data = signal_buffer_data(cA_decrypted);
     ck_assert_int_eq(memcmp(alice_kA, cA_decrypted_data, DJB_KEY_LEN), 0);
 
+    /* Alice generates shared key */
+    uint8_t *alice_shared_key = 0;
+    result = generate_shared_key(&alice_shared_key, bob_signed_pre_key, alice_signed_pre_key, alice_kA, cB_decrypted_data);
+    ck_assert_int_eq(result, 0);
+
+    /* Bob generates shared key */
+    uint8_t *bob_shared_key = 0;
+    result = generate_shared_key(&bob_shared_key, alice_signed_pre_key, bob_signed_pre_key, cA_decrypted_data, bob_kB);
+    ck_assert_int_eq(result, 0);
+
+    /* Make sure that Alice and Bob have a shared key */ 
+    ck_assert_int_eq(memcmp(alice_shared_key, bob_shared_key, 64), 0);
+
     /* Encrypt a pair of messages */
     static const char message_for_bob_data[] = "hey there";
     size_t message_for_bob_len = sizeof(message_for_bob_data) - 1;
@@ -1713,6 +1726,36 @@ session_pre_key_bundle *create_bob_pre_key_bundle(signal_protocol_store_context 
     signal_buffer_free(signature);
 
     return bob_pre_key_bundle;
+}
+
+int generate_shared_key(uint8_t **out, ec_key_pair *their_signed_pre_key, ec_key_pair *our_signed_pre_key, uint8_t *kA, uint8_t *kB) {
+    int result = 0;
+    // Generate g^xy 
+    uint8_t *g_xy = 0;
+    result = curve_calculate_agreement(&g_xy, ec_key_pair_get_public(their_signed_pre_key), ec_key_pair_get_private(our_signed_pre_key));
+    ck_assert_int_eq(result, DJB_KEY_LEN);
+
+    // Concatenate keys
+    uint8_t *concat_buf = 0;
+    concat_buf = malloc(sizeof(uint8_t) * (DJB_KEY_LEN) * 3);
+    memcpy(concat_buf, g_xy, DJB_KEY_LEN);
+    memcpy(concat_buf+32, kA, DJB_KEY_LEN);
+    memcpy(concat_buf+64, kB, DJB_KEY_LEN);
+
+    // Hash concatenated keys to create secret key
+    ratchet_root_key *derived_root = 0; // first 32 bytes of shared key
+    ratchet_chain_key *derived_chain = 0; // last 32 bytes of shared key
+    result = ratcheting_session_calculate_derived_keys(&derived_root, &derived_chain, concat_buf, 32*3, global_context);
+    ck_assert_int_eq(result, 0);
+
+    // Return shared key
+    uint8_t *shared_key = 0;
+    shared_key = malloc(sizeof(uint8_t) * (DJB_KEY_LEN) * 2);
+    memcpy(shared_key, get_ratchet_root_key(derived_root), 32);
+    memcpy(shared_key+32, get_ratchet_chain_key(derived_chain), 32);
+    *out = shared_key;
+    
+    return result;
 }
 
 Suite *simultaneous_initiate_suite(void)

@@ -83,6 +83,13 @@ int ratcheting_session_symmetric_initialize(session_state *state, symmetric_sign
 int ratcheting_session_alice_initialize(session_state *state, alice_signal_protocol_parameters *parameters, signal_context *global_context);
 int ratcheting_session_bob_initialize(session_state *state, bob_signal_protocol_parameters *parameters, signal_context *global_context);
 
+int ratcheting_session_calculate_derived_keys(ratchet_root_key **root_key, ratchet_chain_key **chain_key,
+        uint8_t *secret, size_t secret_len, signal_context *global_context);
+
+uint8_t* get_ratchet_root_key(const ratchet_root_key *ratchet_root_key);
+
+uint8_t* get_ratchet_chain_key(const ratchet_chain_key *ratchet_chain_key);
+
 #ifdef __cplusplus
 }
 #endif
