@@ -1533,13 +1533,6 @@ START_TEST(test_basic_SKEME_protocol)
     result = session_cipher_create(&bob_session_cipher, bob_store, &alice_address, global_context);
     ck_assert_int_eq(result, 0);
 
-    /* Process the pre key bundles */
-    result = session_builder_process_pre_key_bundle(alice_session_builder, bob_pre_key_bundle);
-    ck_assert_int_eq(result, 0);
-
-    result = session_builder_process_pre_key_bundle(bob_session_builder, alice_pre_key_bundle);
-    ck_assert_int_eq(result, 0);
-
     /* Alice creates cA */
     ciphertext_message *alice_cA = 0;
     result = session_cipher_encrypt(alice_session_cipher, alice_kA, DJB_KEY_LEN, &alice_cA);
@@ -1580,6 +1573,13 @@ START_TEST(test_basic_SKEME_protocol)
 
     uint8_t *cA_decrypted_data = signal_buffer_data(cA_decrypted);
     ck_assert_int_eq(memcmp(alice_kA, cA_decrypted_data, DJB_KEY_LEN), 0);
+
+    /* Process the pre key bundles */
+    result = session_builder_process_pre_key_bundle(alice_session_builder, bob_pre_key_bundle, alice_kA, cB_decrypted_data);
+    ck_assert_int_eq(result, 0);
+
+    result = session_builder_process_pre_key_bundle(bob_session_builder, alice_pre_key_bundle, cA_decrypted_data, bob_kB);
+    ck_assert_int_eq(result, 0);
 
     /* Encrypt a pair of messages */
     static const char message_for_bob_data[] = "hey there";

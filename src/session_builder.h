@@ -43,13 +43,14 @@ int session_builder_create(session_builder **builder,
 
 /**
  * Build a new session from a session_pre_key_bundle retrieved from a server.
- *
+ * @param kA Either Alice's kA or Bob's decrypted cA
+ * @param kB Either Bob's kB or Alice's decrypted cB
  * @param bundle A pre key bundle for the destination recipient, retrieved from a server.
  * @retval SG_SUCCESS Success
  * @retval SG_ERR_INVALID_KEY when the session_pre_key_bundle is badly formatted.
  * @retval SG_ERR_UNTRUSTED_IDENTITY when the sender's identity key is not trusted.
  */
-int session_builder_process_pre_key_bundle(session_builder *builder, session_pre_key_bundle *bundle);
+int session_builder_process_pre_key_bundle(session_builder *builder, session_pre_key_bundle *bundle, ...);
 
 void session_builder_free(session_builder *builder);
 

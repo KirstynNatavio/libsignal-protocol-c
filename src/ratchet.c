@@ -13,6 +13,7 @@
 #include "vpool.h"
 #include "LocalStorageProtocol.pb-c.h"
 #include "signal_protocol_internal.h"
+#include <stdarg.h>
 
 #define HASH_OUTPUT_SIZE 32
 #define DERIVED_MESSAGE_SECRETS_SIZE 80
@@ -975,7 +976,7 @@ int ratcheting_session_symmetric_initialize(
 int ratcheting_session_alice_initialize(
         session_state *state,
         alice_signal_protocol_parameters *parameters,
-        signal_context *global_context)
+        signal_context *global_context, ...)
 {
     int result = 0;
     uint8_t *agreement = 0;
