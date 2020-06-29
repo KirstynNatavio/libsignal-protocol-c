@@ -80,7 +80,7 @@ int bob_signal_protocol_parameters_create(
 void bob_signal_protocol_parameters_destroy(signal_type_base *type);
 
 int ratcheting_session_symmetric_initialize(session_state *state, symmetric_signal_protocol_parameters *parameters, signal_context *global_context);
-int ratcheting_session_alice_initialize(session_state *state, alice_signal_protocol_parameters *parameters, signal_context *global_context, ...);
+int ratcheting_session_alice_initialize(session_state *state, alice_signal_protocol_parameters *parameters, signal_context *global_context);
 int ratcheting_session_bob_initialize(session_state *state, bob_signal_protocol_parameters *parameters, signal_context *global_context);
 
 #ifdef __cplusplus

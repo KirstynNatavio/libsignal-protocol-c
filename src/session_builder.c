@@ -10,7 +10,6 @@
 #include "protocol.h"
 #include "key_helper.h"
 #include "signal_protocol_internal.h"
-#include <stdarg.h>
 
 struct session_builder
 {
@@ -189,7 +188,7 @@ complete:
     return result;
 }
 
-int session_builder_process_pre_key_bundle(session_builder *builder, session_pre_key_bundle *bundle, ...)
+int session_builder_process_pre_key_bundle(session_builder *builder, session_pre_key_bundle *bundle)
 {
     int result = 0;
     session_record *record = 0;
@@ -302,17 +301,12 @@ int session_builder_process_pre_key_bundle(session_builder *builder, session_pre
 
     state = session_record_get_state(record);
 
-    va_list args;
-    va_start(args, bundle);
-    uint8_t *kA = va_arg(args, uint8_t*);
-    uint8_t *kB = va_arg(args, uint8_t*);
     result = ratcheting_session_alice_initialize(
             state, parameters,
-            builder->global_context, kA, kB);
+            builder->global_context);
     if(result < 0) {
         goto complete;
     }
-    va_end(args);
 
     session_state_set_unacknowledged_pre_key_message(state,
             has_their_one_time_pre_key_id ? &their_one_time_pre_key_id : 0,
