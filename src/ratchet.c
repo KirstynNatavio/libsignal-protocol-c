@@ -1093,7 +1093,7 @@ int ratcheting_session_alice_initialize(
         goto complete;
     }
 
-    if(parameters->their_one_time_pre_key) {
+    if((parameters->their_one_time_pre_key) && !(parameters->skeme_params)) {
         agreement_len = curve_calculate_agreement(&agreement,
                 parameters->their_one_time_pre_key, ec_key_pair_get_private(parameters->our_base_key));
         if(agreement_len < 0) {
@@ -1202,35 +1202,35 @@ int ratcheting_session_bob_initialize(
             goto complete;
         }
     }
-
-    agreement_len = curve_calculate_agreement(&agreement,
-            parameters->their_identity_key, ec_key_pair_get_private(parameters->our_signed_pre_key));
-    if(agreement_len < 0) {
-        result = agreement_len;
-        goto complete;
-    }
-    if(vpool_insert(&vp, vpool_get_length(&vp), agreement, (size_t)agreement_len)) {
-        free(agreement); agreement = 0; agreement_len = 0;
-    }
     else {
-        result = SG_ERR_NOMEM;
-        goto complete;
-    }
+        agreement_len = curve_calculate_agreement(&agreement,
+                parameters->their_identity_key, ec_key_pair_get_private(parameters->our_signed_pre_key));
+        if(agreement_len < 0) {
+            result = agreement_len;
+            goto complete;
+        }
+        if(vpool_insert(&vp, vpool_get_length(&vp), agreement, (size_t)agreement_len)) {
+            free(agreement); agreement = 0; agreement_len = 0;
+        }
+        else {
+            result = SG_ERR_NOMEM;
+            goto complete;
+        }
 
-    agreement_len = curve_calculate_agreement(&agreement,
-            parameters->their_base_key, parameters->our_identity_key->private_key);
-    if(agreement_len < 0) {
-        result = agreement_len;
-        goto complete;
+        agreement_len = curve_calculate_agreement(&agreement,
+                parameters->their_base_key, parameters->our_identity_key->private_key);
+        if(agreement_len < 0) {
+            result = agreement_len;
+            goto complete;
+        }
+        if(vpool_insert(&vp, vpool_get_length(&vp), agreement, (size_t)agreement_len)) {
+            free(agreement); agreement = 0; agreement_len = 0;
+        }
+        else {
+            result = SG_ERR_NOMEM;
+            goto complete;
+        }
     }
-    if(vpool_insert(&vp, vpool_get_length(&vp), agreement, (size_t)agreement_len)) {
-        free(agreement); agreement = 0; agreement_len = 0;
-    }
-    else {
-        result = SG_ERR_NOMEM;
-        goto complete;
-    }
-
     agreement_len = curve_calculate_agreement(&agreement,
             parameters->their_base_key, ec_key_pair_get_private(parameters->our_signed_pre_key));
     if(agreement_len < 0) {
@@ -1245,7 +1245,7 @@ int ratcheting_session_bob_initialize(
         goto complete;
     }
 
-    if(parameters->our_one_time_pre_key) {
+    if((parameters->our_one_time_pre_key) && !(parameters->skeme_params)) {
         agreement_len = curve_calculate_agreement(&agreement,
                 parameters->their_base_key, ec_key_pair_get_private(parameters->our_one_time_pre_key));
         if(agreement_len < 0) {
