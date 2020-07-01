@@ -8,6 +8,8 @@
 #include "signal_protocol_internal.h"
 #include "utlist.h"
 
+#define DJB_KEY_LEN 32
+
 struct signal_protocol_key_helper_pre_key_list_node
 {
     session_pre_key *element;
@@ -303,5 +305,15 @@ int signal_protocol_key_helper_generate_sender_key_id(uint32_t *key_id, signal_c
     if(result >= 0) {
         *key_id = (uint32_t)value;
     }
+    return result;
+}
+
+int signal_protocol_key_helper_generate_binary_key(uint8_t **binary_key, signal_context *global_context, int32_t device_id) {
+    ec_private_key *key = 0;
+    int result;
+    result = curve_generate_private_key(global_context, &key);
+    if (result >= 0) {
+        *binary_key = get_private_data(key);
+    } 
     return result;
 }
