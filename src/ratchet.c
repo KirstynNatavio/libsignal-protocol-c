@@ -15,6 +15,7 @@
 #include "signal_protocol_internal.h"
 
 #define HASH_OUTPUT_SIZE 32
+#define DJB_KEY_LEN 32
 #define DERIVED_MESSAGE_SECRETS_SIZE 80
 #define DERIVED_ROOT_SECRETS_SIZE 64
 
@@ -1038,34 +1039,46 @@ int ratcheting_session_alice_initialize(
         goto complete;
     }
 
-    agreement_len = curve_calculate_agreement(&agreement,
-            parameters->their_signed_pre_key, parameters->our_identity_key->private_key);
-    if(agreement_len < 0) {
-        result = agreement_len;
-        goto complete;
-    }
-    if(vpool_insert(&vp, vpool_get_length(&vp), agreement, (size_t)agreement_len)) {
-        free(agreement); agreement = 0; agreement_len = 0;
+    if(parameters->skeme_params) {
+        if(!vpool_insert(&vp, vpool_get_length(&vp), parameters->skeme_params->alice_kA, (size_t)DJB_KEY_LEN)) {
+            result = SG_ERR_NOMEM;
+            goto complete;
+        }
+
+        if(!vpool_insert(&vp, vpool_get_length(&vp), parameters->skeme_params->bob_kB, (size_t)DJB_KEY_LEN)) {
+            result = SG_ERR_NOMEM;
+            goto complete;
+        }
     }
     else {
-        result = SG_ERR_NOMEM;
-        goto complete;
-    }
+        agreement_len = curve_calculate_agreement(&agreement,
+                parameters->their_signed_pre_key, parameters->our_identity_key->private_key);
+        if(agreement_len < 0) {
+            result = agreement_len;
+            goto complete;
+        }
+        if(vpool_insert(&vp, vpool_get_length(&vp), agreement, (size_t)agreement_len)) {
+            free(agreement); agreement = 0; agreement_len = 0;
+        }
+        else {
+            result = SG_ERR_NOMEM;
+            goto complete;
+        }
 
-    agreement_len = curve_calculate_agreement(&agreement,
-            parameters->their_identity_key, ec_key_pair_get_private(parameters->our_base_key));
-    if(agreement_len < 0) {
-        result = agreement_len;
-        goto complete;
+        agreement_len = curve_calculate_agreement(&agreement,
+                parameters->their_identity_key, ec_key_pair_get_private(parameters->our_base_key));
+        if(agreement_len < 0) {
+            result = agreement_len;
+            goto complete;
+        }
+        if(vpool_insert(&vp, vpool_get_length(&vp), agreement, (size_t)agreement_len)) {
+            free(agreement); agreement = 0; agreement_len = 0;
+        }
+        else {
+            result = SG_ERR_NOMEM;
+            goto complete;
+        }
     }
-    if(vpool_insert(&vp, vpool_get_length(&vp), agreement, (size_t)agreement_len)) {
-        free(agreement); agreement = 0; agreement_len = 0;
-    }
-    else {
-        result = SG_ERR_NOMEM;
-        goto complete;
-    }
-
     agreement_len = curve_calculate_agreement(&agreement,
             parameters->their_signed_pre_key, ec_key_pair_get_private(parameters->our_base_key));
     if(agreement_len < 0) {
@@ -1177,6 +1190,17 @@ int ratcheting_session_bob_initialize(
     if(!vpool_insert(&vp, vpool_get_length(&vp), discontinuity_data, sizeof(discontinuity_data))) {
         result = SG_ERR_NOMEM;
         goto complete;
+    }
+
+    if(parameters->skeme_params) {
+        if(!vpool_insert(&vp, vpool_get_length(&vp), parameters->skeme_params->alice_kA, (size_t)DJB_KEY_LEN)) {
+            result = SG_ERR_NOMEM;
+            goto complete;
+        }
+        if(!vpool_insert(&vp, vpool_get_length(&vp), parameters->skeme_params->bob_kB, (size_t)DJB_KEY_LEN)) {
+            result = SG_ERR_NOMEM;
+            goto complete;
+        }
     }
 
     agreement_len = curve_calculate_agreement(&agreement,
