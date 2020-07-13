@@ -123,7 +123,7 @@ int signal_protocol_key_helper_generate_sender_key(signal_buffer **key_buffer, s
  */
 int signal_protocol_key_helper_generate_sender_key_id(uint32_t *key_id, signal_context *global_context);
 
-int signal_protocol_key_helper_generate_binary_key(uint8_t **binary_key, signal_context *global_context, int32_t device_id);
+int signal_protocol_key_helper_generate_binary_key(uint8_t **binary_key, signal_context *global_context);
 
 #ifdef __cplusplus
 }
