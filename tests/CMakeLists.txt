@@ -37,6 +37,9 @@ set(LIBS ${LIBS}
 	${CMAKE_THREAD_LIBS_INIT}
 	${CMAKE_DL_LIBS}
 	signal-protocol-c
+	-L/usr/local/lib
+	-lgcrypt
+	-lgpg-error
 )
 
 set(common_SRCS

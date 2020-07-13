@@ -308,12 +308,22 @@ int signal_protocol_key_helper_generate_sender_key_id(uint32_t *key_id, signal_c
     return result;
 }
 
-int signal_protocol_key_helper_generate_binary_key(uint8_t **binary_key, signal_context *global_context, int32_t device_id) {
+int signal_protocol_key_helper_generate_binary_key(uint8_t **binary_key, signal_context *global_context) {
     ec_private_key *key = 0;
     int result;
-    result = curve_generate_private_key(global_context, &key);
-    if (result >= 0) {
-        *binary_key = get_private_data(key);
-    } 
-    return result;
+    for (;;) {
+        result = curve_generate_private_key(global_context, &key);
+        if (result >= 0) {
+            uint8_t *priv_bin_key = get_private_data(key);
+            if (*priv_bin_key != 0x00) {
+                *binary_key = priv_bin_key;
+                return result;
+            }
+        } 
+        else {
+            if (key) free(key);
+            return SG_ERR_UNKNOWN;
+        }
+    }
+        
 }

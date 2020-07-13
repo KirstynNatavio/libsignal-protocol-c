@@ -12,6 +12,7 @@
 #include "protocol.h"
 #include "key_helper.h"
 #include "test_common.h"
+#include <gcrypt.h>
 
 #define DJB_KEY_LEN 32
 
@@ -31,11 +32,15 @@ ec_key_pair *alice_signed_pre_key;
 ec_key_pair *bob_signed_pre_key;
 int32_t alice_signed_pre_key_id;
 int32_t bob_signed_pre_key_id;
+gcry_sexp_t alice_rsa_keypair;
+gcry_sexp_t bob_rsa_keypair;
 
 int is_session_id_equal(signal_protocol_store_context *alice_store, signal_protocol_store_context *bob_store);
 int current_session_version(signal_protocol_store_context *store, const signal_protocol_address *address);
 session_pre_key_bundle *create_alice_pre_key_bundle(signal_protocol_store_context *store);
 session_pre_key_bundle *create_bob_pre_key_bundle(signal_protocol_store_context *store);
+gcry_sexp_t asymmetric_encrypt(uint8_t *binary_key, gcry_sexp_t rsa_keypair);
+int asymmetric_decrypt(uint8_t **orig_binary_key, gcry_sexp_t enc_msg, gcry_sexp_t rsa_keypair);
 
 void test_lock(void *user_data)
 {
@@ -72,6 +77,27 @@ void test_setup()
 
     alice_signed_pre_key_id = (rand() & 0x7FFFFFFF) % PRE_KEY_MEDIUM_MAX_VALUE;
     bob_signed_pre_key_id = (rand() & 0x7FFFFFFF) % PRE_KEY_MEDIUM_MAX_VALUE;
+
+    gcry_error_t err;
+
+    // S expression instructing the creation of a 2048 bit RSA key
+    gcry_sexp_t rsa_params;
+    err = gcry_sexp_build(&rsa_params, NULL, "(genkey (rsa (nbits 4:2048)))");
+    if (err) {
+        fprintf(stderr, "Failed to create RSA params\n");
+    }
+
+    // Generate Alice's RSA key pair
+    err = gcry_pk_genkey(&alice_rsa_keypair, rsa_params);
+    if (err) {
+        fprintf(stderr, "Failed to create Alice's RSA key pair\n");
+    }
+
+    // Generate Bob's RSA key pair 
+    err = gcry_pk_genkey(&bob_rsa_keypair, rsa_params);
+    if (err) {
+        fprintf(stderr, "Failed to create Bob's RSA key pair\n");
+    }
 }
 
 void test_teardown()
@@ -1513,17 +1539,39 @@ START_TEST(test_basic_SKEME_protocol)
     session_builder *bob_session_builder = 0;
     result = session_builder_create(&bob_session_builder, bob_store, &alice_address, global_context);
     ck_assert_int_eq(result, 0);
-
-    /* Create kA */
-    uint8_t *alice_kA = 0;
-    result = signal_protocol_key_helper_generate_binary_key(&alice_kA, global_context, 1);
+    
+    /* Alice creates kA */
+    uint8_t *alice_kA = malloc(32);
+    result = signal_protocol_key_helper_generate_binary_key(&alice_kA, global_context);
     ck_assert_int_eq(result, 0);   
 
-    /* Create kB */
-    uint8_t *bob_kB = 0;
-    result = signal_protocol_key_helper_generate_binary_key(&bob_kB, global_context, 1);
-    ck_assert_int_eq(result, 0);     
+    /* Alice creates cA */
+    gcry_sexp_t alice_cA = asymmetric_encrypt(alice_kA, bob_rsa_keypair);
+    if (alice_cA == NULL) fprintf(stderr, "alice_cA not created properly");
+    
+    /* Bob creates kB */
+    uint8_t *bob_kB = malloc(32);
+    result = signal_protocol_key_helper_generate_binary_key(&bob_kB, global_context);
+    ck_assert_int_eq(result, 0);    
 
+    /* Bob creates cB */
+    gcry_sexp_t bob_cB = asymmetric_encrypt(bob_kB, alice_rsa_keypair);
+    if (bob_cB == NULL) fprintf(stderr, "bob_cB not created properly");
+
+    /* Bob decrypts cA to get kA */
+    uint8_t *decrypted_cA = 0;
+    result = asymmetric_decrypt(&decrypted_cA, alice_cA, bob_rsa_keypair);
+    ck_assert_int_eq(result, 0);
+
+    /* Alice decrypts cB to get kB */
+    uint8_t *decrypted_cB = 0;
+    result = asymmetric_decrypt(&decrypted_cB, bob_cB, alice_rsa_keypair);
+    ck_assert_int_eq(result, 0);
+
+    /* Verify that the binary keys were decrypted correctly */
+    ck_assert_int_eq(memcmp(bob_kB, decrypted_cB, DJB_KEY_LEN), 0);
+    ck_assert_int_eq(memcmp(alice_kA, decrypted_cA, DJB_KEY_LEN), 0);
+    
     /* Create the session ciphers */
     session_cipher *alice_session_cipher = 0;
     result = session_cipher_create(&alice_session_cipher, alice_store, &bob_address, global_context);
@@ -1535,12 +1583,12 @@ START_TEST(test_basic_SKEME_protocol)
 
     /* Alice passes kA and the decrypted cB */
     skeme_protocol_parameters *alice_params = 0;
-    result = skeme_protocol_parameters_create(&alice_params, alice_kA, bob_kB); // this should really pass the decrypted cB
+    result = skeme_protocol_parameters_create(&alice_params, alice_kA, decrypted_cB); 
     ck_assert_int_eq(result, 0);
 
     /* Bob passes kB and the decrypted cA */
     skeme_protocol_parameters *bob_params = 0;
-    result = skeme_protocol_parameters_create(&bob_params, alice_kA, bob_kB); // this should really pass the decrypted cA
+    result = skeme_protocol_parameters_create(&bob_params, decrypted_cA, bob_kB); 
     ck_assert_int_eq(result, 0);
 
     /* Process the pre key bundles */
@@ -1549,47 +1597,6 @@ START_TEST(test_basic_SKEME_protocol)
 
     result = session_builder_process_pre_key_bundle(bob_session_builder, alice_pre_key_bundle, bob_params);
     ck_assert_int_eq(result, 0);
-
-    /* Alice creates cA */
-    ciphertext_message *alice_cA = 0;
-    result = session_cipher_encrypt(alice_session_cipher, alice_kA, DJB_KEY_LEN, &alice_cA);
-    ck_assert_int_eq(result, 0);
-
-    /* Bob creates cB */
-    ciphertext_message *bob_cB = 0;
-    result = session_cipher_encrypt(bob_session_cipher, bob_kB, DJB_KEY_LEN, &bob_cB);
-    ck_assert_int_eq(result, 0);
-
-    /* Verify message types */ 
-    ck_assert_int_eq(ciphertext_message_get_type(alice_cA), CIPHERTEXT_PREKEY_TYPE);
-    ck_assert_int_eq(ciphertext_message_get_type(bob_cB), CIPHERTEXT_PREKEY_TYPE);
-
-    /* Alice makes cA a pre_key_signal_message */
-    pre_key_signal_message *alice_cA_copy = 0;
-    result = pre_key_signal_message_copy(&alice_cA_copy, (pre_key_signal_message *)alice_cA, global_context);
-    ck_assert_int_eq(result, 0);
-
-    /* Bob makes cB a pre_key_signal_message */
-    pre_key_signal_message *bob_cB_copy = 0;
-    result = pre_key_signal_message_copy(&bob_cB_copy, (pre_key_signal_message *)bob_cB, global_context);
-    ck_assert_int_eq(result, 0);
-
-    /* Alice decrypts cB to get kB */
-    signal_buffer *cB_decrypted = 0;
-    result = session_cipher_decrypt_pre_key_signal_message(alice_session_cipher, bob_cB_copy, 0, &cB_decrypted, alice_params);
-    ck_assert_int_eq(result, 0);
-
-    /* Bob decrypts cA to get kA */  
-    signal_buffer *cA_decrypted = 0;
-    result = session_cipher_decrypt_pre_key_signal_message(bob_session_cipher, alice_cA_copy, 0, &cA_decrypted, bob_params);
-    ck_assert_int_eq(result, 0);
-
-    /* Verify that the messages decrypted correctly */
-    uint8_t *cB_decrypted_data = signal_buffer_data(cB_decrypted);
-    ck_assert_int_eq(memcmp(bob_kB, cB_decrypted_data, DJB_KEY_LEN), 0);
-
-    uint8_t *cA_decrypted_data = signal_buffer_data(cA_decrypted);
-    ck_assert_int_eq(memcmp(alice_kA, cA_decrypted_data, DJB_KEY_LEN), 0);
 
     /* Encrypt a pair of messages */
     static const char message_for_bob_data[] = "hey there";
@@ -1608,28 +1615,24 @@ START_TEST(test_basic_SKEME_protocol)
             &message_for_alice);
     ck_assert_int_eq(result, 0);
 
-    /* Verify message types */
-    ck_assert_int_eq(ciphertext_message_get_type(message_for_bob), CIPHERTEXT_SIGNAL_TYPE);
-    ck_assert_int_eq(ciphertext_message_get_type(message_for_alice), CIPHERTEXT_SIGNAL_TYPE);
-
     /* Copy the messages before decrypting */
-    signal_message *message_for_alice_copy = 0;
-    result = signal_message_copy(&message_for_alice_copy,
-            (signal_message *)message_for_alice, global_context);
+    pre_key_signal_message *message_for_alice_copy = 0;
+    result = pre_key_signal_message_copy(&message_for_alice_copy,
+            (pre_key_signal_message *)message_for_alice, global_context);
     ck_assert_int_eq(result, 0);
 
-    signal_message *message_for_bob_copy = 0;
-    result = signal_message_copy(&message_for_bob_copy,
-            (signal_message *)message_for_bob, global_context);
+    pre_key_signal_message *message_for_bob_copy = 0;
+    result = pre_key_signal_message_copy(&message_for_bob_copy,
+            (pre_key_signal_message *)message_for_bob, global_context);
     ck_assert_int_eq(result, 0);
 
     /* Decrypt the messages */
     signal_buffer *alice_plaintext = 0;
-    result = session_cipher_decrypt_signal_message(alice_session_cipher, message_for_alice_copy, 0, &alice_plaintext);
+    result = session_cipher_decrypt_pre_key_signal_message(alice_session_cipher, message_for_alice_copy, 0, &alice_plaintext, alice_params);
     ck_assert_int_eq(result, 0);
 
     signal_buffer *bob_plaintext = 0;
-    result = session_cipher_decrypt_signal_message(bob_session_cipher, message_for_bob_copy, 0, &bob_plaintext);
+    result = session_cipher_decrypt_pre_key_signal_message(bob_session_cipher, message_for_bob_copy, 0, &bob_plaintext, bob_params);
     ck_assert_int_eq(result, 0);
 
     /* Verify that the messages decrypted correctly */
@@ -1898,6 +1901,77 @@ session_pre_key_bundle *create_bob_pre_key_bundle(signal_protocol_store_context 
     signal_buffer_free(signature);
 
     return bob_pre_key_bundle;
+}
+
+gcry_sexp_t asymmetric_encrypt(uint8_t *binary_key, gcry_sexp_t rsa_keypair) {
+    gcry_error_t err = 0;
+
+    // Create MPI 
+    gcry_mpi_t msg;
+    err = gcry_mpi_scan(&msg, GCRYMPI_FMT_USG, binary_key, DJB_KEY_LEN, NULL);
+    if (err) {
+        fprintf(stderr, "Failed to create MPI");
+        return NULL;
+    }    
+
+    // Create s expression out of msg
+    gcry_sexp_t data; 
+    err = gcry_sexp_build(&data, NULL, "(data (flags raw) (value %m))", msg);
+    if (err) {
+        fprintf(stderr, "Failed to create s expression out of msg");
+        return NULL;
+    }
+
+    // Get public key
+    gcry_sexp_t pub_key = gcry_sexp_find_token(rsa_keypair, "public-key", 0);
+    if(pub_key == NULL) {
+        fprintf(stderr, "Failed to get public key");
+        return NULL;
+    }
+
+    // Encrypt with public key
+    gcry_sexp_t encrypted;
+    err = gcry_pk_encrypt(&encrypted, data, pub_key);
+    if (err) {
+        fprintf(stderr, "Failed to encrypt msg");    
+        return NULL;
+    }    
+
+    return encrypted;
+}
+
+int asymmetric_decrypt(uint8_t **orig_binary_key, gcry_sexp_t enc_msg, gcry_sexp_t rsa_keypair) {
+    gcry_error_t err = 0;
+
+    // Get private key
+    gcry_sexp_t priv_key = gcry_sexp_find_token(rsa_keypair, "private-key", 0);
+    if(priv_key == NULL) {
+        fprintf(stderr, "Failed to get private key");
+        return -1;
+    }
+
+    // Decrypt with private key
+    gcry_sexp_t decrypted;
+    err = gcry_pk_decrypt(&decrypted, enc_msg, priv_key);
+    if (err) {
+        fprintf(stderr, "There was an error decrypting the msg\n");
+        return -1;
+    }
+
+    // Create MPI out of decrypted value
+    gcry_mpi_t out_msg = gcry_sexp_nth_mpi(decrypted, 0, GCRYMPI_FMT_USG);
+
+    // Make decrypted msg a buffer
+    uint8_t *orig_key = malloc(32);
+    err = gcry_mpi_print(GCRYMPI_FMT_USG, (unsigned char*)orig_key, DJB_KEY_LEN, NULL, out_msg);
+    if (err) {
+        fprintf(stderr, "Failed to stringify MPI");
+        return -1;
+    }
+
+    *orig_binary_key = orig_key;
+
+    return 0;
 }
 
 Suite *simultaneous_initiate_suite(void)
